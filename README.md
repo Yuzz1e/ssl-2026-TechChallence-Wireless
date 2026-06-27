@@ -1,7 +1,28 @@
 # Radio Communications Technical Challenge 2026 — Team Ri-one
 
 **Submission category:** Wi-Fi Technical Challenge (IEEE 802.11ax, 6 GHz / Wi-Fi 6E band)
-**Status:** Preliminary submission — 6 GHz bench latency/throughput collected; 5 GHz comparison data included; interference and on-field network-switching tests still pending (see Sections 4–6 and the open items below)
+
+
+## Table of Contents
+
+- [1. Goal and Motivation](#1-goal-and-motivation)
+- [2. Hardware Architecture](#2-hardware-architecture)
+  - [Why AX210 + ROCK 5A? (The Edge-AI Use Case)](#why-ax210--rock-5a-the-edge-ai-use-case)
+  - [Open Hardware (eCAD)](#open-hardware-ecad)
+- [3. Firmware and Environment](#3-firmware-and-environment)
+  - [Setup Instructions](#setup-instructions)
+- [4. Summary Data Table](#4-summary-data-table)
+- [5. Experimental Methodology](#5-experimental-methodology)
+- [6. Results and Analysis](#6-results-and-analysis)
+  - [A. Latency and Packet Loss (6 GHz)](#a-latency-and-packet-loss-6-ghz)
+  - [B. Throughput / Data Rate (6 GHz)](#b-throughput--data-rate-6-ghz)
+  - [C. Why 6 GHz (Wi-Fi 6E) over 5 GHz — Band-Selection Discussion](#c-why-6-ghz-wi-fi-6e-over-5-ghz--band-selection-discussion)
+  - [E. Latency / Throughput — 5 GHz Comparison (reference)](#e-latency--throughput--5-ghz-comparison-reference)
+  - [F. Start-Up Time and Power Consumption](#f-start-up-time-and-power-consumption)
+  - [G. Interference Detection and Channel Utilization](#g-interference-detection-and-channel-utilization)
+  - [H. Network-Switching Time (shared <-> team network)](#h-network-switching-time-shared---team-network)
+- [7. Conclusion](#7-conclusion)
+- [8. Open Items — Still Needed Before Final Submission](#8-open-items--still-needed-before-final-submission)
 
 ## 1. Goal and Motivation
 
@@ -79,7 +100,7 @@ docker-compose run --rm measurement bash
 | Round-Trip Latency | Idle (60 FPS, n=7,625): Mean **1.45 ms**, σ 0.37 ms, Max 18.27 ms. Under 20 Mbps UDP: Mean **1.62 ms** (base→robot) / **1.65 ms** (robot→base), Max 2.53 ms (n=98 each) | Idle: 1.56 ms; loaded: 1.92 / 1.67 ms |
 | Average Packet Loss | **0.00%** in every 6 GHz run (7,625/7,625 idle ICMP; 0/98 loaded ICMP; 0% UDP at 20 Mbps) | Same (0% at operational rates) |
 | Data Rate (base station, received) | TCP: Mean **203.9 Mbps**, σ 21.9 Mbps, 262 retransmits/100 s (eth0 down, WiFi only). UDP 200 Mbps: **188.8 Mbps**, 0.02% loss. UDP 20 Mbps: **20.00 Mbps**, 0.00% loss | TCP: 207 Mbps; UDP 200M: 188 Mbps |
-| Detect Interference | **Pending** — HackRF One and `iw survey dump` are part of the toolkit but no spectrum/channel-utilization capture has been logged yet |
+| Detect Interference | **Partial.** `iw survey dump` unsupported on the AX210 (no channel-busy-time API); per-station RF metrics logged instead (signal -48 dBm, 0 beacon loss/retries on 6 GHz). HackRF One 5 GHz sweep captured, idle vs. loaded (Section 6.G) — confirms the 5180 MHz operating channel, but the load-vs-idle delta itself is within sweep-to-sweep noise and not yet statistically significant (see caveat in Section 6.G). 6 GHz-band sweep still pending |
 | Start Up Time | **7.16 s** (`ifup@wlan0.service`, association + DHCP via `systemd-analyze blame`). From journal timestamps on the same boot: Wi-Fi associated ~4 s after `ifup` start, DHCP lease bound ~7 s after `ifup` start; `network-online.target` reached **9.35 s** after power-on (includes pre-network dependencies) |
 | Power Consumption | **12 V** bench supply, robot-side (ROCK 5A + AX210). Idle (link up, no traffic): **0.17 A** (2.0 W). Loaded (TCP max-bandwidth test, ~208 Mbps): **0.26 A** (3.1 W). Single sample per condition — variance not yet characterized |
 | Cost | ~$20 USD (AX210NGW module + M.2 antennas) — bill-of-materials estimate, not a bench measurement |
@@ -173,10 +194,12 @@ The throughput and latency numbers are similar between bands *on a quiet bench* 
 
 **`iw survey dump` is not supported on the AX210.** The command returns no data: Intel's `iwlwifi` driver does not implement the nl80211 survey / channel-busy-time interface (`NL80211_CMD_GET_SURVEY`), so channel-utilization percentage cannot be read from this NIC (verified connected and post-scan; raw capture in `iw_survey_station_6ghz.txt`). As a substitute we log per-station RF metrics from `iw dev wlan0 station dump` on the 6 GHz link: **signal -48 dBm** (avg -53 dBm), **beacon loss 0**, **TX retries/failed 0/0**, RX 286.7 Mbit/s (HE-MCS 11, 2 SS) — consistent with a clean, uncongested 6 GHz channel. True channel-busy-time will instead come from a HackRF One spectrum sweep.
 
-**HackRF spectrum sweep (5 GHz band).** Because `survey dump` is unavailable, we captured the spectrum with a HackRF One (`hackrf_sweep`, 1 MHz bins, 2 passes) over the full 5 GHz band (5150–5910 MHz), once **idle** (`out_base.csv`) and once with the **5 GHz shared network under load** (`out.csv`). The overlay below confirms the shared network's operating channel: a sharp, persistent carrier at **5180 MHz (ch36, `SSL_Rione`)** stands ~8–10 dB above the noise floor in both captures, and under load the smoothed power across the band rises by roughly **+0.3 dB on the operating channel and up to +11 dB on busy adjacent/DFS channels** — i.e. the 5 GHz band is occupied and contended. This is exactly the congestion that the 6 GHz team link (5975 MHz) avoids. (The HackRF tops out at 6000 MHz, so the 6 GHz channel itself sits at the very edge of its range; a 6 GHz-capable front-end is still needed for an equivalent 6 GHz capture.)
+**HackRF spectrum sweep (5 GHz band).** Because `survey dump` is unavailable, we captured the spectrum with a HackRF One (`hackrf_sweep`, 1 MHz bins, 2 passes) over the full 5 GHz band (5150–5910 MHz), once **idle** (`out_base.csv`) and once with the **5 GHz shared network under load** (`out.csv`). The overlay below confirms the shared network's operating channel: a sharp, persistent carrier at **5180 MHz (ch36, `SSL_Rione`)** stands ~8–10 dB above the noise floor in both captures — this part is solid evidence the channel is in use. The idle-vs-loaded *delta* itself is a separate, weaker claim; see the statistical caveat below before reading the smoothed +0.3 dB / +11 dB figures as a real "contention" effect. (The HackRF tops out at 6000 MHz, so the 6 GHz channel itself sits at the very edge of its range; a 6 GHz-capable front-end is still needed for an equivalent 6 GHz capture.)
 
 ![5 GHz spectrum: idle vs. under load](spectrum_sweep_5ghz.png)
 *Figure 18: 5 GHz HackRF sweep — idle baseline (grey) vs. shared network under load (red). Top: power spectrum (faint = raw 1 MHz bins, bold = 9-MHz rolling average); the dashed line marks `SSL_Rione` ch36 (5180 MHz) and the shaded region the JP DFS channels. Bottom: smoothed load − baseline delta (red = added energy under load).*
+
+> **Statistical caveat (the load-vs-idle delta is not yet significant):** the headline "+11 dB on busy channels" figure is the single largest delta out of 760 frequency bins from only 2 sweep passes per condition — picking the extreme value out of hundreds of bins surfaces large numbers from noise alone, regardless of any real effect. Pass-to-pass (within-condition) standard deviation is already **2.3 dB (median, baseline)** / **2.9 dB (median, loaded)**. On the raw, unsmoothed per-bin means, the delta near the operating channel (5170–5250 MHz, n=80 bins) is **+0.93 ± 6.27 dB** — well inside one within-condition standard deviation, i.e. **not distinguishable from sweep-to-sweep noise**. Across the full band there is also an equally large *negative* excursion (**−32.0 dB @ 5486 MHz**) alongside the positive one (+31.3 dB @ 5688 MHz raw) — a genuine load-driven noise increase should not produce excursions of similar size in both directions. More sweep passes (to average down this noise) are needed before a load-vs-idle delta can be claimed as a real effect; see [MEASUREMENT.md](MEASUREMENT.md) Section 7.3 for the full numbers.
 
 > **Antenna caveat (found during hardware sourcing, not yet resolved):** the UNIT-C6L's two RP-SMA ports are tuned for 2.4 GHz Wi-Fi and 868–923 MHz LoRa respectively — neither is matched to the 5/6 GHz band this capture targets. The HackRF One itself tunes 1 MHz–6 GHz regardless of antenna, but reusing the UNIT-C6L's *included* antennas here will under-read 5/6 GHz signal levels. Substitute a broadband (e.g. ANT500) or dedicated 5/6 GHz antenna before running this test. Details in [MEASUREMENT.md](MEASUREMENT.md) Section 7.
 

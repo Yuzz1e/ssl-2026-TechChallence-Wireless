@@ -2,6 +2,46 @@
 
 This document describes **how each metric in the submission was measured**, including exact commands, topology, raw-tool output, post-processing scripts, and known limitations. Results themselves are summarized in [README.md](README.md) Section 4.
 
+## Table of Contents
+
+- [1. Test Topology and Endpoints](#1-test-topology-and-endpoints)
+- [2. Software Versions](#2-software-versions)
+- [3. Round-Trip Latency (ICMP Ping)](#3-round-trip-latency-icmp-ping)
+  - [3.1 Idle baseline (long soak test)](#31-idle-baseline-long-soak-test)
+  - [3.2 Latency under 20 Mbps UDP load](#32-latency-under-20-mbps-udp-load)
+- [4. Throughput / Data Rate (iperf3)](#4-throughput--data-rate-iperf3)
+  - [4.1 TCP — maximum achievable bandwidth](#41-tcp--maximum-achievable-bandwidth)
+  - [4.2 UDP — 200 Mbps target (link ceiling)](#42-udp--200-mbps-target-link-ceiling)
+  - [4.3 UDP — 20 Mbps target (NPU debug-stream profile)](#43-udp--20-mbps-target-npu-debug-stream-profile)
+  - [4.4 How throughput statistics are computed](#44-how-throughput-statistics-are-computed)
+- [5. Start-Up Time (Association + DHCP)](#5-start-up-time-association--dhcp)
+  - [5.1 Commands](#51-commands)
+  - [5.2 `systemd-analyze` output (captured 2026-06-27)](#52-systemd-analyze-output-captured-2026-06-27)
+  - [5.3 Journal timeline (`ifup@wlan0.service`, same boot)](#53-journal-timeline-ifupwlan0service-same-boot)
+  - [5.4 Reproducing on a fresh boot](#54-reproducing-on-a-fresh-boot)
+- [6. Power Consumption](#6-power-consumption)
+  - [6.1 Setup](#61-setup)
+  - [6.2 Results (single sample each)](#62-results-single-sample-each)
+  - [6.3 Limitations](#63-limitations)
+- [7. Interference Detection / Channel Utilization](#7-interference-detection--channel-utilization)
+  - [7.1 `iw survey dump` — not supported on the AX210](#71-iw-survey-dump--not-supported-on-the-ax210)
+  - [7.2 Available link-quality data (`iw station dump`)](#72-available-link-quality-data-iw-station-dump)
+  - [7.3 HackRF spectrum sweep — 5 GHz band (idle vs. loaded)](#73-hackrf-spectrum-sweep--5-ghz-band-idle-vs-loaded)
+- [10. 6 GHz Bench Tests (2026-06-27)](#10-6-ghz-bench-tests-2026-06-27)
+  - [10.1 Idle latency (60 FPS cadence)](#101-idle-latency-60-fps-cadence)
+  - [10.2 Latency under 20 Mbps UDP load](#102-latency-under-20-mbps-udp-load)
+  - [10.3 Throughput (iperf3, 100 s each)](#103-throughput-iperf3-100-s-each)
+  - [10.4 5 GHz vs 6 GHz summary](#104-5-ghz-vs-6-ghz-summary)
+  - [10.6 Regulatory channel map (DFS vs 6 GHz) — basis for the band-selection argument](#106-regulatory-channel-map-dfs-vs-6-ghz--basis-for-the-band-selection-argument)
+  - [10.7 Band-comparison plots](#107-band-comparison-plots)
+  - [10.8 6 GHz Wi-Fi bring-up (`wpa_supplicant`)](#108-6-ghz-wi-fi-bring-up-wpa_supplicant)
+- [11. Network-Switching Time (shared <-> team network)](#11-network-switching-time-shared---team-network)
+  - [11.1 Setup](#111-setup)
+  - [11.2 Method](#112-method)
+  - [11.3 Results](#113-results)
+- [12. Output File Index](#12-output-file-index)
+- [13. Known Gaps Before Final Submission](#13-known-gaps-before-final-submission)
+
 ---
 
 ## 1. Test Topology and Endpoints
@@ -456,7 +496,21 @@ python3 plot_spectrum_sweep.py                          # -> spectrum_sweep_5ghz
 | Peak Δ (load − baseline) | +11.2 dB @ 5690 MHz |
 | Noise floor | ≈ -60 dBm/MHz across the band |
 
-The persistent 5180 MHz carrier confirms the shared network's channel, and the broadly positive load−baseline delta (especially across the busy DFS/upper-UNII region) shows the 5 GHz band is occupied and contended — the congestion the 6 GHz team link (5975 MHz) avoids. See README Figure 18 (`spectrum_sweep_5ghz.png`).
+The persistent 5180 MHz carrier confirms the shared network's channel is in use — that part is solid. The load−baseline delta is a separate, weaker claim; see the significance check below before reading +0.3 dB / +11.2 dB as evidence the band gets measurably *more* contended under load. See README Figure 18 (`spectrum_sweep_5ghz.png`).
+
+**Statistical significance check (the load-vs-idle delta is not yet significant):** picking the single largest of 760 frequency bins, from only 2 sweep passes per condition, is expected to surface a large delta from noise alone, independent of any real effect. Recomputed directly from the raw per-bin means (no smoothing):
+
+| Check | Value |
+|---|---|
+| Within-condition std (median), baseline | 2.3 dB |
+| Within-condition std (median), loaded | 2.9 dB |
+| Delta, operating channel ±40 MHz (5170–5250 MHz, n=80 bins) | **+0.93 ± 6.27 dB** (mean ± std across bins) |
+| Delta, all bins (n=760) | mean +0.46 dB, std 7.31 dB |
+| Largest positive delta | +31.3 dB @ 5688 MHz |
+| Largest negative delta | −32.0 dB @ 5486 MHz |
+| Bins with \|delta\| > 2× typical within-condition std | 375 / 760 (49%) |
+
+The operating-channel delta (+0.93 dB) is well inside one within-condition standard deviation (2.3–2.9 dB) — **not distinguishable from sweep-to-sweep noise** with only 2 passes per condition. The near-symmetric largest positive (+31.3 dB) and negative (−32.0 dB) excursions elsewhere in the band are also hard to reconcile with a genuine load-driven *increase* in noise, which should be one-directional. **Conclusion:** this capture is solid evidence of the 5180 MHz operating channel's existence, but does not yet support a quantitative "noise increases under load" claim — that would need substantially more sweep passes (to average down the ~2–3 dB pass-to-pass noise) before a multi-dB delta could be called significant.
 
 **Limitations:** the HackRF One tunes only to 6000 MHz, so the 6 GHz operating channel (5975 MHz) sits at the very edge of its range and the UNIT-C6L antennas are not matched to 5/6 GHz — an equivalent **6 GHz** sweep needs a 6 GHz-capable front-end (see README Section 8 Open Items).
 
