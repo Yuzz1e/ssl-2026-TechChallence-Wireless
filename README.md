@@ -40,6 +40,10 @@ Our robot communication stack is built on the following hardware:
 
 Traditional 2.4 GHz/5 GHz Wi-Fi modules often suffer severe packet loss in crowded competition environments, which typically limits telemetry to simple coordinate data. We instead use the ROCK 5A's built-in NPU (Neural Processing Unit) for on-robot inference, which means we need to stream high-resolution debug images, rich telemetry, and neural-network outputs back to the base station in real time. The AX210's 6 GHz band gives this Edge-AI pipeline the throughput and clean RF environment it needs, at roughly $20 USD per module — a fraction of the cost of custom commercial radio modules.
 
+### Open Hardware (eCAD)
+
+The Wi-Fi radio path itself stays COTS-only by design (Section 1) — no custom PCB is needed for the AX210/ROCK 5A link. The team does design and publish custom PCBs for the rest of the robot, including the mainboard that bridges the ROCK 5A to the robot's motor control and sensors, in a separate repository: **[Rione/ssl-Circuit](https://github.com/Rione/ssl-Circuit)**, with the current ROCK 5A mainboard design at [`2026/PCB/MainBoard/MainBoard_V26_1_2`](https://github.com/Rione/ssl-Circuit/tree/baa913cb75b0630cb045215d907af2356b6a9d27/2026/PCB/MainBoard/MainBoard_V26_1_2).
+
 ## 3. Firmware and Environment
 
 To make our results reproducible by any SSL team, we rely entirely on open-source Linux drivers and a containerized environment — no proprietary compilers required.
@@ -80,7 +84,7 @@ docker-compose run --rm measurement bash
 | Power Consumption | **12 V** bench supply, robot-side (ROCK 5A + AX210). Idle (link up, no traffic): **0.17 A** (2.0 W). Loaded (TCP max-bandwidth test, ~208 Mbps): **0.26 A** (3.1 W). Single sample per condition — variance not yet characterized |
 | Cost | ~$20 USD (AX210NGW module + M.2 antennas) — bill-of-materials estimate, not a bench measurement |
 | Firmware Source | Standard Linux kernel `iwlwifi` driver (open source, no custom firmware) |
-| eCAD | N/A (COTS components). STL antenna-mount files referenced in the draft are not yet in this repo — need to be added |
+| eCAD | Wi-Fi radio path: N/A (COTS components, no custom PCB by design). Team mainboard (ROCK 5A ↔ rest of robot) eCAD published separately: [Rione/ssl-Circuit](https://github.com/Rione/ssl-Circuit), [`MainBoard_V26_1_2`](https://github.com/Rione/ssl-Circuit/tree/baa913cb75b0630cb045215d907af2356b6a9d27/2026/PCB/MainBoard/MainBoard_V26_1_2). STL antenna-mount files referenced in the draft are still not in this repo — need to be added |
 
 ## 5. Experimental Methodology
 
@@ -207,6 +211,6 @@ Our approach shows that COTS Wi-Fi 6E modules like the Intel AX210 can provide a
 - **Detect Interference:** `iw dev wlan0 survey dump` is **unsupported on the AX210** (iwlwifi exposes no channel-busy-time); per-station RF metrics are logged instead (signal -48 dBm, 0 beacon loss, 0 TX retries on 6 GHz). A HackRF One **5 GHz sweep is now captured** (idle vs. loaded, `out_base.csv`/`out.csv`, Figure 18). **Still to do:** an equivalent capture on the 6 GHz operating channel (needs a 6 GHz front-end, since the HackRF tops out at 6000 MHz and the UNIT-C6L antennas are tuned for 2.4 GHz / sub-1 GHz — see caveat in Section 6.G).
 - **Power consumption (variance):** repeat idle/loaded current readings to report σ; current table entries are single bench samples.
 - ~~**Network-switching demonstration:**~~ — **measured** (see Section 6.H). Mean switch time **481 ms** to the 6 GHz team network and **326 ms** to the 5 GHz shared network; first data (ping) follows ~10–20 ms later. Still to do on-field: integrate the switch into a live friendly-match demo.
-- **eCAD/STL files:** the draft references STL files for antenna mounts; these aren't in the repo yet and are required for the open-source release.
+- **eCAD/STL files:** the draft references STL files for antenna mounts; these still aren't in this repo and are required for the open-source release. The radio path itself has no eCAD (COTS-only by design); the team's mainboard PCB design (Section 2) is published separately at [Rione/ssl-Circuit](https://github.com/Rione/ssl-Circuit).
 - ~~**Reproducible environment:**~~ — **done.** [`Dockerfile`](Dockerfile) + [`docker-compose.yml`](docker-compose.yml) now actually exist and install `iperf3`/`tcpdump`/`iw`/Python+matplotlib; [`wpa_supplicant.conf.example`](wpa_supplicant.conf.example) extracted as a real file; README Section 3's OS line corrected to the actual Debian 13 (DietPi) bench image.
 - ~~**Repository URL:**~~ — **done.** Setup instructions now point at the real repo, [github.com/Yuzz1e/ssl-2026-TechChallence-Wireless](https://github.com/Yuzz1e/ssl-2026-TechChallence-Wireless). **Still manual:** the local changes from this pass (this README, MEASUREMENT.md, and the new Dockerfile/docker-compose.yml/requirements.txt/wpa_supplicant.conf.example) are not committed/pushed yet — `git add`, `git commit`, and `git push` need to happen before the mailing-list link will show this content.
